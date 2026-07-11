@@ -24,3 +24,48 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* ==========================================================================
+   ESTILOS OPERACIONAIS E TÁTICOS (RESOLUÇÃO DE CACHE)
+   ========================================================================== */
+
+/* Customização da Scrollbar Sombria */
+.container-sombrio::-webkit-scrollbar {
+  width: 6px !important;
+  height: 6px !important;
+}
+.container-sombrio::-webkit-scrollbar-track {
+  background: #0f172a !important;
+}
+.container-sombrio::-webkit-scrollbar-thumb {
+  background: #334155 !important;
+  border-radius: 20px !important;
+}
+.container-sombrio::-webkit-scrollbar-thumb:hover {
+  background: #2563eb !important;
+}
+
+/* Força os cards a responderem instantaneamente ao mouse */
+.card-tatico {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  position: relative;
+}
+
+.card-tatico:hover {
+  background-color: rgba(15, 23, 42, 0.85) !important;
+  border-color: rgba(59, 130, 246, 0.6) !important;
+  transform: translateY(-2px) !important;
+  box-shadow: 0 10px 25px -5px rgba(30, 58, 138, 0.4), 0 8px 10px -6px rgba(30, 58, 138, 0.4) !important;
+  filter: brightness(1.15);
+}
+
+/* Efeito cascata no ícone interno do card ativo */
+.card-tatico:hover .icone-card {
+  transform: scale(1.18) !important;
+  color: #60a5fa !important;
+  filter: drop-shadow(0 0 6px rgba(59, 130, 246, 0.6)) !important;
+}
+
+.card-tatico:hover .titulo-card {
+  color: #f1f5f9 !important;
+}

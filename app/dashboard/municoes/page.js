@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { 
   Box, 
   Search, 
@@ -17,48 +17,14 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
-// DADOS MOCKADOS INICIAIS — Base de dados local do Paiol
-const DADOS_MOCK_MUNICOES = [
-  {
-    id: "1",
-    lote: "LOTE-9MM-2026A",
-    calibre: "9x19mm Parabellum",
-    tipo: "CBC Ogival (Operacional)",
-    almoxarifado: 15400,
-    distribuido: 7700,
-    estoqueTotal: 23100,
-    status: "Estoque Seguro"
-  },
-  {
-    id: "2",
-    lote: "LOTE-556-IARA",
-    calibre: "5.56x45mm NATO",
-    tipo: "Imbel Bonded (Fuzil Tipo IA2)",
-    almoxarifado: 1200,
-    distribuido: 4000,
-    estoqueTotal: 5200,
-    status: "Atenção"
-  },
-  {
-    id: "3",
-    lote: "LOTE-12CBC-TACTICAL",
-    calibre: "Calibre .12",
-    tipo: "CBC Balote (Antimotim)",
-    almoxarifado: 150,
-    distribuido: 1050,
-    estoqueTotal: 1200,
-    status: "Crítico"
-  }
-];
-
 export default function ControleMunicoesPage() {
-  // Estado inicializado diretamente com o Mock (Sem useEffect!)
-  const [lotes, setLotes] = useState(DADOS_MOCK_MUNICOES);
+  // Estados de dados e carregamento da API real
+  const [lotes, setLotes] = useState([]);
+  const [loading, setLoading] = useState(true); 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
   const [busca, setBusca] = useState("");
   const [filtroStatus, setFiltroStatus] = useState("Todos");
-
-  // Controle de Passos (Step 1: Inventário, Step 2: Cadastrar Novo Lote)
   const [step, setStep] = useState(1);
 
   // Estados do formulário de novo lote
@@ -72,39 +38,36 @@ export default function ControleMunicoesPage() {
     distribuido: ""
   });
 
-  // Filtros em tempo de execução (Derivação de estado pura e segura)
-  const lotesFiltrados = lotes.filter(item => {
-    const calibreTexto = item?.calibre?.toLowerCase() || "";
-    const loteTexto = item?.lote?.toLowerCase() || "";
-    const tipoTexto = item?.tipo?.toLowerCase() || "";
-    const buscaTexto = busca.toLowerCase();
+  // Hook para carregar a listagem assim que a tela abre (Isolado de qualquer atualização de estado síncrona)
+  useEffect(() => {
+    let isMounted = true;
 
-    const correspondeBusca = 
-      calibreTexto.includes(buscaTexto) ||
-      loteTexto.includes(buscaTexto) ||
-      tipoTexto.includes(buscaTexto);
-    
-    const correspondeStatus = filtroStatus === "Todos" || item?.status === filtroStatus;
-
-    return correspondeBusca && correspondeStatus;
-  });
-
-  // Somatórias volumétricas baseadas no estado atual
-  const totalCartuchos = lotes.reduce((acc, curr) => acc + (Number(curr?.estoqueTotal) || 0), 0);
-  const totalAlmoxarifado = lotes.reduce((acc, curr) => acc + (Number(curr?.almoxarifado) || 0), 0);
-  const totalDistribuido = lotes.reduce((acc, curr) => acc + (Number(curr?.distribuido) || 0), 0);
-  const lotesCriticos = lotes.filter(l => l?.status === "Crítico" || l?.status === "Atenção").length;
-
-  const getStatusStyle = (status) => {
-    switch (status) {
-      case "Estoque Seguro": return "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
-      case "Atenção": return "bg-amber-500/10 text-amber-400 border-amber-500/20";
-      case "Crítico": return "bg-rose-500/10 text-rose-400 border-rose-500/20";
-      default: return "bg-slate-500/10 text-slate-400 border-slate-500/20";
+    async function fetchLotesPaiol() {
+      try {
+        const response = await fetch("/api/municoes");
+        if (!response.ok) throw new Error("Erro ao buscar dados do servidor.");
+        const dados = await response.json();
+        
+        if (isMounted) {
+          setLotes(Array.isArray(dados) ? dados : []);
+        }
+      } catch (error) {
+        console.error("Erro na comunicação com a API:", error);
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
     }
-  };
 
-  // Cadastro simulado localmente com manipulação de estado segura
+    fetchLotesPaiol();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Cadastro real enviando os dados para a API Postgres
   const handleCadastrarLote = async (e) => {
     e.preventDefault();
     
@@ -115,34 +78,17 @@ export default function ControleMunicoesPage() {
 
     try {
       setIsSubmitting(true);
-      // Simulação rápida de persistência
-      await new Promise((resolve) => setTimeout(resolve, 600));
-
-      const qtdAlmox = parseInt(novoLote.almoxarifado) || 0;
-      const qtdDist = parseInt(novoLote.distribuido) || 0;
-      const total = qtdAlmox + qtdDist;
-
-      // Define uma regra de criticidade mockada para o novo lote
-      let statusDefinido = "Estoque Seguro";
-      if (total < 2000) statusDefinido = "Crítico";
-      else if (total < 6000) statusDefinido = "Atenção";
-
-      const novoItem = {
-        id: String(lotes.length + 1),
-        lote: novoLote.lote.toUpperCase(),
-        calibre: novoLote.calibre,
-        tipo: `${novoLote.marca} ${novoLote.modelo} (${novoLote.tipo})`,
-        almoxarifado: qtdAlmox,
-        distribuido: qtdDist,
-        estoqueTotal: total,
-        status: statusDefinido
-      };
-
-      // Adiciona o novo lote ao estado local
-      setLotes([...lotes, novoItem]);
-      alert("Novo lote logístico cadastrado com sucesso! (Simulado localmente)");
       
-      // Reseta o formulário e volta para a listagem
+      const response = await fetch("/api/municoes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(novoLote)
+      });
+
+      if (!response.ok) throw new Error("Erro ao salvar o lote.");
+
+      alert("Lote cadastrado e persistido no Neon Postgres com sucesso!");
+      
       setNovoLote({
         marca: "",
         modelo: "",
@@ -152,12 +98,59 @@ export default function ControleMunicoesPage() {
         almoxarifado: "",
         distribuido: ""
       });
+      
+      setLoading(true);
+      // Busca atualizada assincronamente após o evento do usuário
+      const refreshResponse = await fetch("/api/municoes");
+      if (refreshResponse.ok) {
+        const dados = await refreshResponse.json();
+        setLotes(Array.isArray(dados) ? dados : []);
+      }
       setStep(1);
 
     } catch (error) {
-      alert("Erro do Sistema: Falha ao registrar novo lote no Paiol.");
+      alert("Erro do Sistema: Falha ao registrar novo lote no banco de dados real.");
     } finally {
       setIsSubmitting(false);
+      setLoading(false);
+    }
+  };
+
+  // CORREÇÃO: Otimização com useMemo para impedir re-renders em cascata ao filtrar
+  const lotesFiltrados = useMemo(() => {
+    return lotes.filter(item => {
+      const calibreTexto = item?.calibre?.toLowerCase() || "";
+      const loteTexto = item?.lote?.toLowerCase() || "";
+      const tipoTexto = item?.tipo?.toLowerCase() || "";
+      const buscaTexto = busca.toLowerCase();
+
+      const correspondeBusca = 
+        calibreTexto.includes(buscaTexto) ||
+        loteTexto.includes(buscaTexto) ||
+        tipoTexto.includes(buscaTexto);
+      
+      const correspondeStatus = filtroStatus === "Todos" || item?.status === filtroStatus;
+
+      return correspondeBusca && correspondeStatus;
+    });
+  }, [lotes, busca, filtroStatus]);
+
+  // CORREÇÃO: Memoização dos valores calculados do banco de dados
+  const metricas = useMemo(() => {
+    const totalCartuchos = lotes.reduce((acc, curr) => acc + (Number(curr?.estoqueTotal) || 0), 0);
+    const totalAlmoxarifado = lotes.reduce((acc, curr) => acc + (Number(curr?.almoxarifado) || 0), 0);
+    const totalDistribuido = lotes.reduce((acc, curr) => acc + (Number(curr?.distribuido) || 0), 0);
+    const lotesCriticos = lotes.filter(l => l?.status === "Crítico" || l?.status === "Atenção").length;
+
+    return { totalCartuchos, totalAlmoxarifado, totalDistribuido, lotesCriticos };
+  }, [lotes]);
+
+  const getStatusStyle = (status) => {
+    switch (status) {
+      case "Estoque Seguro": return "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
+      case "Atenção": return "bg-amber-500/10 text-amber-400 border-amber-500/20";
+      case "Crítico": return "bg-rose-500/10 text-rose-400 border-rose-500/20";
+      default: return "bg-slate-500/10 text-slate-400 border-slate-500/20";
     }
   };
 
@@ -214,7 +207,7 @@ export default function ControleMunicoesPage() {
                 <div>
                   <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Carga Total Prontidão</p>
                   <p className="text-xl font-black text-white mt-0.5">
-                    {totalCartuchos.toLocaleString("pt-BR")} <span className="text-[10px] font-medium text-slate-500">un</span>
+                    {loading ? "..." : metricas.totalCartuchos.toLocaleString("pt-BR")} <span className="text-[10px] font-medium text-slate-500">un</span>
                   </p>
                 </div>
                 <div className="p-2 bg-slate-800 text-slate-400 rounded-lg border border-slate-700">
@@ -226,7 +219,7 @@ export default function ControleMunicoesPage() {
                 <div>
                   <p className="text-[9px] font-bold text-blue-500 uppercase tracking-wider">Reserva Central (Almox.)</p>
                   <p className="text-xl font-black text-blue-400 mt-0.5">
-                    {totalAlmoxarifado.toLocaleString("pt-BR")} <span className="text-[10px] font-medium text-slate-500">un</span>
+                    {loading ? "..." : metricas.totalAlmoxarifado.toLocaleString("pt-BR")} <span className="text-[10px] font-medium text-slate-500">un</span>
                   </p>
                 </div>
                 <div className="p-2 bg-blue-500/10 text-blue-400 rounded-lg border border-blue-500/10">
@@ -238,7 +231,7 @@ export default function ControleMunicoesPage() {
                 <div>
                   <p className="text-[9px] font-bold text-indigo-500 uppercase tracking-wider">Carga Externa (Cias)</p>
                   <p className="text-xl font-black text-indigo-400 mt-0.5">
-                    {totalDistribuido.toLocaleString("pt-BR")} <span className="text-[10px] font-medium text-slate-500">un</span>
+                    {loading ? "..." : metricas.totalDistribuido.toLocaleString("pt-BR")} <span className="text-[10px] font-medium text-slate-500">un</span>
                   </p>
                 </div>
                 <div className="p-2 bg-indigo-500/10 text-indigo-400 rounded-lg border border-indigo-500/10">
@@ -250,7 +243,7 @@ export default function ControleMunicoesPage() {
                 <div>
                   <p className="text-[9px] font-bold text-amber-500 uppercase tracking-wider">Alertas de Reposição</p>
                   <p className="text-xl font-black text-amber-400 mt-0.5">
-                    {lotesCriticos} <span className="text-[10px] font-medium text-slate-500">lotes</span>
+                    {loading ? "..." : metricas.lotesCriticos} <span className="text-[10px] font-medium text-slate-500">lotes</span>
                   </p>
                 </div>
                 <div className="p-2 bg-amber-500/10 text-amber-400 rounded-lg border border-amber-500/10">
@@ -304,12 +297,21 @@ export default function ControleMunicoesPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/50">
-                    {lotesFiltrados.length > 0 ? (
+                    {loading ? (
+                      <tr>
+                        <td colSpan="8" className="text-center py-16 text-xs text-slate-400 font-medium">
+                          <div className="flex items-center justify-center gap-2">
+                            <Loader2 className="animate-spin text-blue-500" size={16} />
+                            Consultando registros remotos do Paiol...
+                          </div>
+                        </td>
+                      </tr>
+                    ) : lotesFiltrados.length > 0 ? (
                       lotesFiltrados.map((item) => (
                         <tr key={item.id} className="hover:bg-slate-950/40 transition-colors">
                           <td className="p-3">
                             <div className="flex items-center gap-2.5">
-                              <div className={`w-2 h-2 rounded-full ${item.status === "Crítico" ? "bg-rose-500" : "bg-emerald-500"}`} />
+                              <div className={`w-2 h-2 rounded-full ${item.status === "Crítico" ? "bg-rose-500" : item.status === "Atenção" ? "bg-amber-500" : "bg-emerald-500"}`} />
                               <span className="text-xs font-bold text-white tracking-wide">{item.calibre}</span>
                             </div>
                           </td>
@@ -320,7 +322,7 @@ export default function ControleMunicoesPage() {
                           <td className="p-3 font-mono text-xs text-white font-bold text-right">{(item.estoqueTotal || 0).toLocaleString("pt-BR")}</td>
                           <td className="p-3 text-center">
                             <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border inline-block min-w-[105px] text-center ${getStatusStyle(item.status)}`}>
-                              {item.status}
+                              {item.status || "Não Definido"}
                             </span>
                           </td>
                           <td className="p-3 text-center">

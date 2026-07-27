@@ -1,0 +1,23 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model LoteMunicao {
+  id           Int      @id @default(autoincrement())
+  lote         String   @unique @db.VarChar(50)
+  calibre      String   @db.VarChar(20)
+  marca        String   @db.VarChar(50)
+  modelo       String   @db.VarChar(50)
+  tipo         String   @db.VarChar(20)
+  almoxarifado Int      @default(0)
+  distribuido  Int      @default(0)
+  estoqueTotal Int      @default(0)
+  status       String   @db.VarChar(30)
+  criadoEm     DateTime @default(now()) @map("criado_em")
+
+  @@map("lotes_municao")
+}

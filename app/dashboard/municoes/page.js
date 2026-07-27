@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { 
   Box, 
   Search, 
@@ -17,71 +17,83 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
-// DADOS MOCKADOS INICIAIS — Base de dados local do Paiol
-const DADOS_MOCK_MUNICOES = [
-  {
-    id: "1",
-    lote: "LOTE-9MM-2026A",
-    calibre: "9x19mm Parabellum",
-    tipo: "CBC Ogival (Operacional)",
-    almoxarifado: 15400,
-    distribuido: 7700,
-    estoqueTotal: 23100,
-    status: "Estoque Seguro"
-  },
-  {
-    id: "2",
-    lote: "LOTE-556-IARA",
-    calibre: "5.56x45mm NATO",
-    tipo: "Imbel Bonded (Fuzil Tipo IA2)",
-    almoxarifado: 1200,
-    distribuido: 4000,
-    estoqueTotal: 5200,
-    status: "Atenção"
-  },
-  {
-    id: "3",
-    lote: "LOTE-12CBC-TACTICAL",
-    calibre: "Calibre .12",
-    tipo: "CBC Balote (Antimotim)",
-    almoxarifado: 150,
-    distribuido: 1050,
-    estoqueTotal: 1200,
-    status: "Crítico"
-  }
-];
-
 export default function ControleMunicoesPage() {
-  // Estado inicializado diretamente com o Mock (Sem useEffect!)
-  const [lotes, setLotes] = useState(DADOS_MOCK_MUNICOES);
+  const [lotes, setLotes] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [busca, setBusca] = useState("");
   const [filtroStatus, setFiltroStatus] = useState("Todos");
-
-  // Controle de Passos (Step 1: Inventário, Step 2: Cadastrar Novo Lote)
   const [step, setStep] = useState(1);
 
-  // Estados do formulário de novo lote
+  // Formulário alinhado às necessidades do Paiol
   const [novoLote, setNovoLote] = useState({
-    marca: "",
-    modelo: "",
-    calibre: "",
+    tipo: "LETAL",
     lote: "",
-    tipo: "Operacional (Treinamento/Patrulha)",
+    marca: "CBC",
+    modelo: "COMUM M193 - 55GR",
+    calibre: "5.56x45mm",
     almoxarifado: "",
     distribuido: ""
   });
 
-  // Filtros em tempo de execução (Derivação de estado pura e segura)
+  // 1. CARREGAR LOTES DO BANCO NEON VIA API
+  // Função auxiliar para recarregar após ações do usuário (ex: submit)
+  const recarregarLotes = async () => {
+    try {
+      setIsLoading(true);
+      const res = await fetch("/api/municoes");
+      if (res.ok) {
+        const data = await res.json();
+        setLotes(data);
+      }
+    } catch (error) {
+      console.error("Erro ao recarregar lotes:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Efeito limpo sem setState síncrono no topo da função
+  useEffect(() => {
+    let active = true;
+
+    async function buscarDadosIniciais() {
+      try {
+        const res = await fetch("/api/municoes");
+        if (res.ok && active) {
+          const data = await res.json();
+          setLotes(data);
+        }
+      } catch (error) {
+        console.error("Erro de conexão ao carregar lotes:", error);
+      } finally {
+        if (active) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    buscarDadosIniciais();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Filtro para considerar modelo, lote, calibre e tipo (LETAL/FESTIM)
   const lotesFiltrados = lotes.filter(item => {
     const calibreTexto = item?.calibre?.toLowerCase() || "";
     const loteTexto = item?.lote?.toLowerCase() || "";
+    const modeloTexto = item?.modelo?.toLowerCase() || "";
+    const marcaTexto = item?.marca?.toLowerCase() || "";
     const tipoTexto = item?.tipo?.toLowerCase() || "";
     const buscaTexto = busca.toLowerCase();
 
     const correspondeBusca = 
       calibreTexto.includes(buscaTexto) ||
       loteTexto.includes(buscaTexto) ||
+      modeloTexto.includes(buscaTexto) ||
+      marcaTexto.includes(buscaTexto) ||
       tipoTexto.includes(buscaTexto);
     
     const correspondeStatus = filtroStatus === "Todos" || item?.status === filtroStatus;
@@ -89,7 +101,7 @@ export default function ControleMunicoesPage() {
     return correspondeBusca && correspondeStatus;
   });
 
-  // Somatórias volumétricas baseadas no estado atual
+  // Totais operacionais
   const totalCartuchos = lotes.reduce((acc, curr) => acc + (Number(curr?.estoqueTotal) || 0), 0);
   const totalAlmoxarifado = lotes.reduce((acc, curr) => acc + (Number(curr?.almoxarifado) || 0), 0);
   const totalDistribuido = lotes.reduce((acc, curr) => acc + (Number(curr?.distribuido) || 0), 0);
@@ -104,58 +116,50 @@ export default function ControleMunicoesPage() {
     }
   };
 
-  // Cadastro simulado localmente com manipulação de estado segura
+  // 2. ENVIAR DADOS DO FORMULÁRIO PARA GRAVAR NO BANCO NEON
   const handleCadastrarLote = async (e) => {
     e.preventDefault();
     
-    if (!novoLote.marca || !novoLote.modelo || !novoLote.calibre || !novoLote.lote) {
-      alert("Atenção: Os campos Marca, Modelo, Calibre e Número do Lote são obrigatórios.");
+    if (!novoLote.lote || (!novoLote.almoxarifado && !novoLote.distribuido)) {
+      alert("Atenção: Informe o Número do Lote e a Quantidade recebida (Almoxarifado ou Distribuída).");
       return;
     }
 
     try {
       setIsSubmitting(true);
-      // Simulação rápida de persistência
-      await new Promise((resolve) => setTimeout(resolve, 600));
 
-      const qtdAlmox = parseInt(novoLote.almoxarifado) || 0;
-      const qtdDist = parseInt(novoLote.distribuido) || 0;
-      const total = qtdAlmox + qtdDist;
+      const response = await fetch("/api/municoes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(novoLote),
+      });
 
-      // Define uma regra de criticidade mockada para o novo lote
-      let statusDefinido = "Estoque Seguro";
-      if (total < 2000) statusDefinido = "Crítico";
-      else if (total < 6000) statusDefinido = "Atenção";
+      const data = await response.json();
 
-      const novoItem = {
-        id: String(lotes.length + 1),
-        lote: novoLote.lote.toUpperCase(),
-        calibre: novoLote.calibre,
-        tipo: `${novoLote.marca} ${novoLote.modelo} (${novoLote.tipo})`,
-        almoxarifado: qtdAlmox,
-        distribuido: qtdDist,
-        estoqueTotal: total,
-        status: statusDefinido
-      };
+      if (!response.ok) {
+        alert(`Erro ao cadastrar: ${data.error || "Falha na requisição"}`);
+        return;
+      }
 
-      // Adiciona o novo lote ao estado local
-      setLotes([...lotes, novoItem]);
-      alert("Novo lote logístico cadastrado com sucesso! (Simulado localmente)");
+      alert("Lote de munição registrado com sucesso no banco de dados!");
       
-      // Reseta o formulário e volta para a listagem
+      // Limpar formulário e atualizar listagem
       setNovoLote({
-        marca: "",
-        modelo: "",
-        calibre: "",
+        tipo: "LETAL",
         lote: "",
-        tipo: "Operacional (Treinamento/Patrulha)",
+        marca: "CBC",
+        modelo: "COMUM M193 - 55GR",
+        calibre: "5.56x45mm",
         almoxarifado: "",
         distribuido: ""
       });
+
+      await recarregarLotes();
       setStep(1);
 
     } catch (error) {
-      alert("Erro do Sistema: Falha ao registrar novo lote no Paiol.");
+      console.error("Erro ao gravar no banco:", error);
+      alert("Erro do Sistema: Falha ao registrar lote no Paiol.");
     } finally {
       setIsSubmitting(false);
     }
@@ -174,7 +178,7 @@ export default function ControleMunicoesPage() {
               Controle Metódico de Munições (Lotes Ativos)
             </h1>
             <p className="text-xs text-slate-400 mt-1">
-              Balanço quantitativo de cartuchos por calibre, fracionamento de depósitos e monitoramento de criticidade física.
+              Balanço quantitativo de cartuchos por calibre, tipo (Letal/Festim), lote e destinação.
             </p>
           </div>
 
@@ -265,7 +269,7 @@ export default function ControleMunicoesPage() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
                 <input 
                   type="text" 
-                  placeholder="Buscar por Calibre, Lote ou Tipo..."
+                  placeholder="Buscar por Calibre, Lote, Modelo ou Tipo..."
                   value={busca}
                   onChange={(e) => setBusca(e.target.value)}
                   className="w-full pl-9 pr-4 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/50 transition-colors"
@@ -293,28 +297,42 @@ export default function ControleMunicoesPage() {
                 <table className="w-full text-left border-collapse">
                   <thead className="bg-slate-900/80 sticky top-0 backdrop-blur-md border-b border-slate-800 z-10">
                     <tr>
+                      <th className="p-3 text-[10px] font-bold uppercase text-slate-400 tracking-wider">Tipo</th>
                       <th className="p-3 text-[10px] font-bold uppercase text-slate-400 tracking-wider">Calibre</th>
-                      <th className="p-3 text-[10px] font-bold uppercase text-slate-400 tracking-wider">Nº do Lote (Rastreio)</th>
-                      <th className="p-3 text-[10px] font-bold uppercase text-slate-400 tracking-wider">Especificação</th>
-                      <th className="p-3 text-[10px] font-bold uppercase text-slate-400 tracking-wider text-right">Qtd Almox.</th>
-                      <th className="p-3 text-[10px] font-bold uppercase text-slate-400 tracking-wider text-right">Qtd Ext. (Cias)</th>
-                      <th className="p-3 text-[10px] font-bold uppercase text-slate-400 tracking-wider text-right">Total Fisico</th>
+                      <th className="p-3 text-[10px] font-bold uppercase text-slate-400 tracking-wider">Lote</th>
+                      <th className="p-3 text-[10px] font-bold uppercase text-slate-400 tracking-wider">Marca / Modelo</th>
+                      <th className="p-3 text-[10px] font-bold uppercase text-slate-400 tracking-wider text-right">Almox.</th>
+                      <th className="p-3 text-[10px] font-bold uppercase text-slate-400 tracking-wider text-right">Cias (Ext)</th>
+                      <th className="p-3 text-[10px] font-bold uppercase text-slate-400 tracking-wider text-right">Total</th>
                       <th className="p-3 text-[10px] font-bold uppercase text-slate-400 tracking-wider text-center">Nível</th>
                       <th className="p-3 text-[10px] font-bold uppercase text-slate-400 tracking-wider text-center">Ficha</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/50">
-                    {lotesFiltrados.length > 0 ? (
+                    {isLoading ? (
+                      <tr>
+                        <td colSpan="9" className="text-center py-12 text-xs text-slate-400">
+                          <Loader2 className="animate-spin inline-block mr-2" size={16} />
+                          Carregando lotes do banco de dados...
+                        </td>
+                      </tr>
+                    ) : lotesFiltrados.length > 0 ? (
                       lotesFiltrados.map((item) => (
                         <tr key={item.id} className="hover:bg-slate-950/40 transition-colors">
                           <td className="p-3">
-                            <div className="flex items-center gap-2.5">
-                              <div className={`w-2 h-2 rounded-full ${item.status === "Crítico" ? "bg-rose-500" : "bg-emerald-500"}`} />
-                              <span className="text-xs font-bold text-white tracking-wide">{item.calibre}</span>
-                            </div>
+                            <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
+                              item.tipo === "LETAL" 
+                                ? "bg-red-500/10 text-red-400 border border-red-500/20" 
+                                : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                            }`}>
+                              {item.tipo}
+                            </span>
                           </td>
+                          <td className="p-3 font-bold text-xs text-white">{item.calibre}</td>
                           <td className="p-3 font-mono text-xs text-slate-300 font-bold">{item.lote}</td>
-                          <td className="p-3 text-xs text-slate-400 font-medium">{item.tipo}</td>
+                          <td className="p-3 text-xs text-slate-400 font-medium">
+                            <span className="text-slate-300 font-bold">{item.marca}</span> - {item.modelo}
+                          </td>
                           <td className="p-3 font-mono text-xs text-slate-400 text-right">{(item.almoxarifado || 0).toLocaleString("pt-BR")}</td>
                           <td className="p-3 font-mono text-xs text-indigo-400 text-right">{(item.distribuido || 0).toLocaleString("pt-BR")}</td>
                           <td className="p-3 font-mono text-xs text-white font-bold text-right">{(item.estoqueTotal || 0).toLocaleString("pt-BR")}</td>
@@ -337,7 +355,7 @@ export default function ControleMunicoesPage() {
                       ))
                     ) : (
                       <tr>
-                        <td colSpan="8" className="text-center py-12 text-xs text-slate-500 font-medium">
+                        <td colSpan="9" className="text-center py-12 text-xs text-slate-500 font-medium">
                           Nenhum lote ou calibre localizado para os filtros inseridos.
                         </td>
                       </tr>
@@ -351,71 +369,79 @@ export default function ControleMunicoesPage() {
           /* PASSO 2: FORMULÁRIO DE CADASTRO */
           <div className="bg-slate-950/30 border border-slate-800 rounded-xl p-5 text-xs animate-fadeIn">
             <h2 className="text-[10px] font-black text-white uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-800 pb-2.5 mb-4">
-              <PlusCircle size={14} className="text-blue-500" /> Cadastrar Entrada de Novo Lote Logístico
+              <PlusCircle size={14} className="text-blue-500" /> Cadastrar Entrada de Lote (Paiol)
             </h2>
 
             <form onSubmit={handleCadastrarLote} className="space-y-4">
+              
+              {/* LINHA 1: TIPO, CALIBRE E MARCA */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-slate-400 font-bold mb-1 uppercase text-[9px]">Marca do Fabricante:</label>
-                  <input
-                    type="text"
-                    placeholder="Ex: CBC, Magtech"
-                    value={novoLote.marca}
-                    onChange={(e) => setNovoLote({...novoLote, marca: e.target.value})}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-                  />
+                  <label className="block text-slate-400 font-bold mb-1 uppercase text-[9px]">Tipo de Munição:</label>
+                  <select
+                    value={novoLote.tipo}
+                    onChange={(e) => setNovoLote({...novoLote, tipo: e.target.value})}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-bold focus:outline-none focus:border-blue-500 cursor-pointer"
+                  >
+                    <option value="LETAL">LETAL</option>
+                    <option value="FESTIM">FESTIM</option>
+                  </select>
                 </div>
-                <div>
-                  <label className="block text-slate-400 font-bold mb-1 uppercase text-[9px]">Modelo / Especificação:</label>
-                  <input
-                    type="text"
-                    placeholder="Ex: Ogival, ETOG, EXPO"
-                    value={novoLote.modelo}
-                    onChange={(e) => setNovoLote({...novoLote, modelo: e.target.value})}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-                  />
-                </div>
+
                 <div>
                   <label className="block text-slate-400 font-bold mb-1 uppercase text-[9px]">Calibre:</label>
-                  <input
-                    type="text"
-                    placeholder="Ex: 9x19mm, 5.56x45mm"
+                  <select
                     value={novoLote.calibre}
                     onChange={(e) => setNovoLote({...novoLote, calibre: e.target.value})}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-semibold focus:outline-none focus:border-blue-500"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-bold focus:outline-none focus:border-blue-500 cursor-pointer"
+                  >
+                    <option value="5.56x45mm">5.56x45mm</option>
+                    <option value="9x19mm">9x19mm</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-400 font-bold mb-1 uppercase text-[9px]">Marca / Fabricante:</label>
+                  <input
+                    type="text"
+                    value={novoLote.marca}
+                    onChange={(e) => setNovoLote({...novoLote, marca: e.target.value})}
+                    placeholder="Ex: CBC"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500"
                   />
                 </div>
               </div>
 
+              {/* LINHA 2: MODELO E NÚMERO DO LOTE */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-slate-400 font-bold mb-1 uppercase text-[9px]">Número do Lote (Rastreabilidade):</label>
+                  <label className="block text-slate-400 font-bold mb-1 uppercase text-[9px]">Modelo / Especificação:</label>
+                  <select
+                    value={novoLote.modelo}
+                    onChange={(e) => setNovoLote({...novoLote, modelo: e.target.value})}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-blue-500 cursor-pointer"
+                  >
+                    <option value="COMUM M193 - 55GR">COMUM M193 - 55GR</option>
+                    <option value="EOOG - 124GR - TREINA">EOOG - 124GR - TREINA</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-400 font-bold mb-1 uppercase text-[9px]">Número do Lote (Rastreio Recebido):</label>
                   <input
                     type="text"
-                    placeholder="Ex: LOTE-40-2026X"
+                    placeholder="Ex: LOTE-9MM-2026B"
                     value={novoLote.lote}
                     onChange={(e) => setNovoLote({...novoLote, lote: e.target.value})}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono font-bold tracking-wide focus:outline-none focus:border-blue-500"
                   />
                 </div>
-                <div>
-                  <label className="block text-slate-400 font-bold mb-1 uppercase text-[9px]">Finalidade / Destinação:</label>
-                  <select
-                    value={novoLote.tipo}
-                    onChange={(e) => setNovoLote({...novoLote, tipo: e.target.value})}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-300 focus:outline-none focus:border-blue-500 cursor-pointer"
-                  >
-                    <option value="Operacional (Treinamento/Patrulha)">Operacional (Treinamento/Patrulha)</option>
-                    <option value="Fuzil Tipo IA2 / Confronto">Fuzil Tipo IA2 / Confronto</option>
-                    <option value="Balote / Antimotim">Balote / Antimotim</option>
-                  </select>
-                </div>
               </div>
 
+              {/* LINHA 3: QUANTIDADES DE ENTRADA */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-800/60 pt-3">
                 <div>
-                  <label className="block text-blue-400 font-bold mb-1 uppercase text-[9px]">Qtd Inicial no Almoxarifado (Reserva):</label>
+                  <label className="block text-blue-400 font-bold mb-1 uppercase text-[9px]">Quantidade no Almoxarifado (Reserva):</label>
                   <input
                     type="number"
                     placeholder="Ex: 5000"
@@ -425,7 +451,7 @@ export default function ControleMunicoesPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-indigo-400 font-bold mb-1 uppercase text-[9px]">Qtd Inicial Distribuída (Cias):</label>
+                  <label className="block text-indigo-400 font-bold mb-1 uppercase text-[9px]">Quantidade Distribuída (Cias):</label>
                   <input
                     type="number"
                     placeholder="Ex: 1200"
@@ -460,9 +486,9 @@ export default function ControleMunicoesPage() {
 
       {/* RODAPÉ FIXO */}
       <div className="mt-4 shrink-0 p-3 bg-slate-900/60 border border-slate-800 text-[10px] text-slate-500 font-semibold tracking-wide flex justify-between items-center rounded-xl">
-        <span>Listando {lotesFiltrados.length} especificações de calibres e lotes</span>
+        <span>Listando {lotesFiltrados.length} lotes cadastrados</span>
         <span className="text-slate-400 uppercase bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
-          Carga Geral de Cartuchos P4
+          Controle Logístico Paiol P4
         </span>
       </div>
 
